@@ -1,0 +1,11 @@
+opencv-python
+torch
+torchvision
+pandas
+numpy
+scikit-learn
+matplotlib
+deep_sort_realtime
+deep_sort_realtime
+requests
+pillow
