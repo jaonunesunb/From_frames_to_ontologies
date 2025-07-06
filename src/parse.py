@@ -7,7 +7,8 @@ import re
 from tqdm import tqdm
 
 # Diretórios com anotações
-ROOT_DIR = r"C:\Users\Pegad\OneDrive\Área de Trabalho\vs\UFU\projeto_final\viratannotations"
+ROOT_DIR = r"C:\Users\Pegad\OneDrive\Área de Trabalho\vs\UFU\projeto_final\viratannotations" 
+# TO-DO: atualizar pra pegar o diretorio automaticamente do pc do usuário
 SUBDIRS = [os.path.join(ROOT_DIR, d) for d in ("train", "validate")]
 
 # Função para carregar e garantir lista de documentos YAML
@@ -151,7 +152,6 @@ for col in required_cols:
 df['area'] = df['w'] * df['h']
 df['speed'] = np.sqrt((df['x'].diff())**2 + (df['y'].diff())**2)
 
-# Preenche NaNs remanescentes com 0
 df.fillna(0, inplace=True)
 
 # Gera CSV supervisionado (com predicate)

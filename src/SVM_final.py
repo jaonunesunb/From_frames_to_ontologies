@@ -62,7 +62,7 @@ with open("src/outputs/accuracy_svm.txt", "w") as f:
 cm = confusion_matrix(y_test, y_pred, labels=svm_clf.classes_)
 labels_names = y_encoder.inverse_transform(svm_clf.classes_)
 disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels_names)
-disp.plot(xticks_rotation=45, cmap='Greens')
+disp.plot(xticks_rotation="vertical", cmap='Greens')
 plt.title('Confusion Matrix – SVM (RBF Kernel)')
 plt.tight_layout()
 plt.savefig("src/outputs/confusion_matrix_svm.png")

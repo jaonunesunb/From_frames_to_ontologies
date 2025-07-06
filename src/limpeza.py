@@ -3,7 +3,6 @@ import pandas as pd
 def clean_subject_type(input_path, output_path):
     df = pd.read_csv(input_path)
 
-    # Substituir '0' por 'Unknown' na coluna subject_type
     df['subject_type'] = df['subject_type'].replace('0', 'Unknown')
 
     print(f"Total rows: {len(df)}")
