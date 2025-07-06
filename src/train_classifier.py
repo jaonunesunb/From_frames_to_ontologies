@@ -1,70 +1,72 @@
 import pandas as pd
-from pathlib import Path
-from feature_extraction import extract_features_from_video
+import numpy as np
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score
-from sklearn.preprocessing import LabelEncoder
-from tqdm import tqdm
-import os
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+import joblib
 
-# Caminho da lista de vídeos rotulados
-with open("videos_completos.txt", "r") as f:
-    video_names = [line.strip() for line in f.readlines()]
+# 1) Carrega dados
+print('Carregando train_labeled.csv...')
+df = pd.read_csv('train_labeled.csv')
 
-# Define onde estão as anotações
-annotations_dirs = [
-    Path("viratannotations/train"),
-    Path("viratannotations/validate")
-]
+# Colunas fixas a descartar: metadados e identificadores
+base_drop = ['video', 'actor_id', 'frame']
 
-# Função para encontrar o caminho correto do vídeo
-def get_annotation_paths(video_name):
-    for d in annotations_dirs:
-        a_path = d / f"{video_name}.activities.yml"
-        g_path = d / f"{video_name}.geom.yml"
-        r_path = d / f"{video_name}.regions.yml"
-        if a_path.exists() and g_path.exists() and r_path.exists():
-            return a_path, g_path, r_path
-    return None, None, None
+# Alvos a treinar
+targets = ['predicate', 'subject_type']
 
-# Coletar features de todos os vídeos rotulados
-all_features = []
+# Espaço de busca comum para RandomForest
+dist_params = {
+    'rf__n_estimators': [50, 100, 150, 200, 250, 300],
+    'rf__max_depth': [None] + list(range(5, 55, 5)),
+    'rf__min_samples_split': list(range(2, 21)),
+}
 
-for video in tqdm(video_names, desc="Extraindo features"):
-    a, g, r = get_annotation_paths(video)
-    if a and g and r:
-        try:
-            feats = extract_features_from_video(a, g, r)
-            for f in feats:
-                f["video"] = video
-                all_features.append(f)
-        except Exception as e:
-            print(f"Erro no vídeo {video}: {e}")
+# Loop de treinamento para cada target
+for target in targets:
+    print(f"\nTreinando modelo para target '{target}'...")
 
-# Transformar em DataFrame
-df = pd.DataFrame(all_features)
+    # 2) Prepara X e y para o target atual
+    drop_targets = [t for t in targets if t != target]
+    # Remove colunas de metadados e as colunas de outros targets
+    X = df.drop(columns=base_drop + drop_targets + [target])
+    y = df[target]
 
-# Codificar o rótulo (tipo de evento)
-le = LabelEncoder()
-df["label"] = le.fit_transform(df["type"])
+    # 3) Define pipeline e RandomizedSearchCV
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('rf', RandomForestClassifier(random_state=42))
+    ])
 
-# Selecionar colunas numéricas
-X = df[["duration", "num_actors", "avg_width", "avg_height", "regions_in_event"]]
-y = df["label"]
+    search = RandomizedSearchCV(
+        estimator=pipeline,
+        param_distributions=dist_params,
+        n_iter=50,
+        cv=5,
+        scoring='f1_macro',
+        n_jobs=-1,
+        verbose=2,
+        random_state=42
+    )
 
-# Treinar modelo com validação cruzada
-clf = RandomForestClassifier(random_state=42)
-scores = cross_val_score(clf, X, y, cv=5)
+    # 4) Executa busca de hiperparâmetros
+    print(f"Iniciando busca de hiperparâmetros para '{target}'...")
+    search.fit(X, y)
 
-print("Acurácias na validação cruzada:", scores)
-print("Acurácia média:", scores.mean())
+    # 5) Exibe resultados
+    print(f"Melhor F1_macro (CV) para '{target}': {search.best_score_:.4f}")
+    print(f"Melhores hiperparâmetros para '{target}': {search.best_params_}")
 
-# Mostrar os rótulos
-print("\nLabel mapping (classe → número):")
-for label, code in zip(le.classes_, le.transform(le.classes_)):
-    print(f"{code} → {label}")
+    # 6) Treina modelo final e salva
+    best_model = search.best_estimator_
+    print(f"Treinando modelo final para '{target}'...")
+    best_model.fit(X, y)
+    model_filename = f'rf_virat_{target}_optimized.joblib'
+    joblib.dump(best_model, model_filename)
+    print(f"Modelo salvo em {model_filename}")
 
-# Salvar DataFrame em CSV
-output_path = "dados_rotulados.csv"
-df.to_csv(output_path, index=False)
-print(f"\n✅ Features salvas em: {output_path}")
+# 7) (Opcional) Prever interações entre dois subject_types:
+#    - Construir dataset de pares de atores por evento
+#    - Gerar features relacionais (e.g., diferença de posição, duração conjunta)\#    - Definir y como concatenação de dois subject_type labels
+#    - Treinar pipeline similar ao acima

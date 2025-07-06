@@ -1,64 +1,40 @@
 import pandas as pd
-from sklearn.utils import resample
-from imblearn.over_sampling import SMOTE
-import argparse
 import numpy as np
+from imblearn.over_sampling import SMOTE
 
-def load_data(csv_path="dados_rotulados.csv"):
-    df = pd.read_csv(csv_path)
-    return df
+# 1) Carrega dados do CSV emparelhado
+print('Carregando paired_train_labeled.csv...')
+df = pd.read_csv('paired_train_labeled.csv')
 
-def undersample(df):
-    min_count = df['type'].value_counts().min()
-    dfs = [resample(g, replace=False, n_samples=min_count, random_state=42)
-           for _, g in df.groupby('type')]
-    return pd.concat(dfs)
+# 2) Define a classe alvo para classificação binária
+TARGET_CLASS = 'Interacts'  # altere para a classe que deseja prever
+print(f"Alvo binário: 1 = {TARGET_CLASS}, 0 = outras classes")
 
-def oversample_smote(df):
-    from sklearn.preprocessing import LabelEncoder
+# 3) Cria rótulo binário: 1 se predicate == TARGET_CLASS, senão 0
+df['target'] = (df['predicate'] == TARGET_CLASS).astype(int)
 
-    # Filtra apenas classes com >= 2 amostras (evita erro do SMOTE)
-    valid_classes = df["type"].value_counts()
-    valid_classes = valid_classes[valid_classes >= 2].index.tolist()
-    df = df[df["type"].isin(valid_classes)]
+# 4) Define colunas a remover (metadados e IDs)
+drop_cols = ['video', 'event_id', 'predicate', 'actorA_id', 'actorB_id']
 
-    X = df[["duration", "num_actors", "avg_width", "avg_height", "regions_in_event"]]
-    y = df["type"]
-    le = LabelEncoder()
-    y_encoded = le.fit_transform(y)
+# 5) Separa features e alvo
+X = df.drop(columns=drop_cols + ['target'])
+y = df['target']
 
-    sm = SMOTE(random_state=42, k_neighbors=1)  # usa 1 vizinho só para evitar erro
-    X_res, y_res = sm.fit_resample(X, y_encoded)
+# 6) Seleciona apenas colunas numéricas
+X_num = X.select_dtypes(include=[np.number])
+features = X_num.columns.tolist()
+print('Features numéricas usadas:', features)
 
-    df_res = pd.DataFrame(X_res, columns=X.columns)
-    df_res["type"] = le.inverse_transform(y_res)
-    return df_res
+# 7) Balanceamento com SMOTE (sintetiza exemplos da classe minoritária)
+print('Aplicando SMOTE para balanceamento dos rótulos binários...')
+over = SMOTE(random_state=42)
+X_res, y_res = over.fit_resample(X_num, y)
+print(f'Formato balanceado: X={X_res.shape}, y={y_res.shape}')
 
-def binarize(df):
-    comuns = df['type'].value_counts().nlargest(5).index.tolist()
-    df["type_bin"] = df["type"].apply(lambda x: "normal" if x in comuns else "anormal")
-    return df.drop(columns=["type"]).rename(columns={"type_bin": "type"})
-
-def balance_data(strategy):
-    df = load_data()
-
-    if strategy == "undersample":
-        df_bal = undersample(df)
-    elif strategy == "oversample":
-        df_bal = oversample_smote(df)
-    elif strategy == "binarize":
-        df_bal = binarize(df)
-    else:
-        raise ValueError("Estratégia inválida. Use 'undersample', 'oversample' ou 'binarize'.")
-
-    df_bal.to_csv("dados_balanceados.csv", index=False)
-    print(f"✅ Dados balanceados salvos em 'dados_balanceados.csv'\n")
-    print(df_bal['type'].value_counts())
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("strategy", choices=["undersample", "oversample", "binarize"],
-                        help="Estratégia de balanceamento a aplicar")
-    args = parser.parse_args()
-
-    balance_data(args.strategy)
+# 8) Monta DataFrame balanceado e salva para treino binário
+balanced_df = pd.concat([
+    pd.DataFrame(X_res, columns=features),
+    y_res.rename('target')
+], axis=1)
+balanced_df.to_csv(f'paired_train_labeled_binary_{TARGET_CLASS}_balanced.csv', index=False)
+print(f'Dados balanceados salvos em paired_train_labeled_binary_{TARGET_CLASS}_balanced.csv')
